@@ -11,6 +11,8 @@ import (
 )
 
 func main() {
+	// NewClient still requires OPENCODE_GO_API_KEY because it can also issue
+	// authenticated inference requests. ListModels itself sends no credential.
 	client, err := opencodeauth.NewClient(opencodeauth.Options{
 		UserAgent: "opencode-auth-go-models-example/1.0",
 	})

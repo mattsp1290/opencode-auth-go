@@ -121,8 +121,10 @@ redirect hooks and does not rewrite URLs. A supplied overall `http.Client`
 
 For a catalog request, use `client.ListModels(ctx)`. Each call makes a fresh
 request without authorization or session headers, and the result is only
-catalog metadata. The package has no retry loop, account-status check, quota
-API, automatic protocol routing, or model allowlist.
+catalog metadata. `NewClient` still requires `OPENCODE_GO_API_KEY` because the
+resulting client is also capable of authenticated inference, but the key is
+not sent by `ListModels`. The package has no retry loop, account-status check,
+quota API, automatic protocol routing, or model allowlist.
 
 ## Examples
 

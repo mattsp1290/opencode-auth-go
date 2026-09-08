@@ -510,22 +510,22 @@ func readLiveStream(protocol Protocol, body io.Reader) error {
 		case ProtocolChatCompletions:
 			if data == "[DONE]" {
 				terminal = true
-				continue
-			}
-			var event struct {
-				Choices []struct {
-					Delta struct {
-						Content string `json:"content"`
-					} `json:"delta"`
-					FinishReason *string `json:"finish_reason"`
-				} `json:"choices"`
-			}
-			if json.Unmarshal([]byte(data), &event) != nil {
-				return errors.New("chat stream event")
-			}
-			for _, choice := range event.Choices {
-				content = content || strings.TrimSpace(choice.Delta.Content) != ""
-				terminal = terminal || choice.FinishReason != nil && strings.TrimSpace(*choice.FinishReason) != ""
+			} else {
+				var event struct {
+					Choices []struct {
+						Delta struct {
+							Content string `json:"content"`
+						} `json:"delta"`
+						FinishReason *string `json:"finish_reason"`
+					} `json:"choices"`
+				}
+				if json.Unmarshal([]byte(data), &event) != nil {
+					return errors.New("chat stream event")
+				}
+				for _, choice := range event.Choices {
+					content = content || strings.TrimSpace(choice.Delta.Content) != ""
+					terminal = terminal || choice.FinishReason != nil && strings.TrimSpace(*choice.FinishReason) != ""
+				}
 			}
 		case ProtocolMessages:
 			var event struct {
@@ -553,6 +553,9 @@ func readLiveStream(protocol Protocol, body io.Reader) error {
 			content = content || event.Type == "response.output_text.delta" && strings.TrimSpace(event.Delta) != ""
 			terminal = terminal || event.Type == "response.completed" && event.Response.Status == "completed"
 		}
+		if content && terminal {
+			return nil
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return errors.New("stream")
@@ -561,4 +564,47 @@ func readLiveStream(protocol Protocol, body io.Reader) error {
 		return errors.New("stream completion")
 	}
 	return nil
+}
+
+func TestReadLiveStreamStopsAtProtocolCompletion(t *testing.T) {
+	tests := map[Protocol]string{
+		ProtocolChatCompletions: "data: {\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n",
+		ProtocolMessages:        "data: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"answer\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n",
+		ProtocolResponses:       "data: {\"type\":\"response.output_text.delta\",\"delta\":\"answer\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n",
+	}
+	for protocol, stream := range tests {
+		t.Run(string(protocol), func(t *testing.T) {
+			stream += "data: not-json-after-completion\n\n"
+			if err := readLiveStream(protocol, strings.NewReader(stream)); err != nil {
+				t.Fatalf("readLiveStream() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestReadLiveStreamReturnsBeforeEOF(t *testing.T) {
+	reader, writer := io.Pipe()
+	t.Cleanup(func() {
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- readLiveStream(ProtocolResponses, reader)
+	}()
+
+	stream := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"answer\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"
+	if _, err := io.WriteString(writer, stream); err != nil {
+		t.Fatalf("WriteString() error = %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("readLiveStream() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("readLiveStream() waited for EOF after protocol completion")
+	}
 }
