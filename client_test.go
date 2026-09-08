@@ -2,9 +2,11 @@ package opencodeauth
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -93,6 +95,42 @@ func TestNewClientCopiesHTTPClient(t *testing.T) {
 	}
 	if defaultClient.HTTPClient().Transport == nil {
 		t.Fatal("default HTTP client has nil transport")
+	}
+}
+
+func TestCredentialBearingValuesFormatSafely(t *testing.T) {
+	const (
+		apiKeyCanary  = "api-key-format-canary"
+		sessionCanary = "session-format-canary"
+	)
+	options := Options{
+		APIKey:    apiKeyCanary,
+		UserAgent: "agent/1",
+		SessionID: sessionCanary,
+	}
+	client, err := NewClient(options)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	values := map[string]any{
+		"options value":   options,
+		"options pointer": &options,
+		"client value":    *client,
+		"client pointer":  client,
+	}
+	for name, value := range values {
+		for _, format := range []string{"%v", "%+v", "%#v"} {
+			t.Run(name+" "+format, func(t *testing.T) {
+				got := fmt.Sprintf(format, value)
+				if strings.Contains(got, apiKeyCanary) || strings.Contains(got, sessionCanary) {
+					t.Fatalf("formatted value exposed a credential: %q", got)
+				}
+				if !strings.Contains(got, "<redacted>") {
+					t.Fatalf("formatted value = %q, want explicit redaction", got)
+				}
+			})
+		}
 	}
 }
 

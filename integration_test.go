@@ -516,7 +516,6 @@ func readLiveStream(protocol Protocol, body io.Reader) error {
 						Delta struct {
 							Content string `json:"content"`
 						} `json:"delta"`
-						FinishReason *string `json:"finish_reason"`
 					} `json:"choices"`
 				}
 				if json.Unmarshal([]byte(data), &event) != nil {
@@ -524,7 +523,6 @@ func readLiveStream(protocol Protocol, body io.Reader) error {
 				}
 				for _, choice := range event.Choices {
 					content = content || strings.TrimSpace(choice.Delta.Content) != ""
-					terminal = terminal || choice.FinishReason != nil && strings.TrimSpace(*choice.FinishReason) != ""
 				}
 			}
 		case ProtocolMessages:
@@ -579,6 +577,13 @@ func TestReadLiveStreamStopsAtProtocolCompletion(t *testing.T) {
 				t.Fatalf("readLiveStream() error = %v", err)
 			}
 		})
+	}
+}
+
+func TestReadLiveStreamRequiresChatDoneSentinel(t *testing.T) {
+	stream := "data: {\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+	if err := readLiveStream(ProtocolChatCompletions, strings.NewReader(stream)); err == nil {
+		t.Fatal("readLiveStream() accepted a chat stream without [DONE]")
 	}
 }
 

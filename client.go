@@ -33,6 +33,16 @@ type Options struct {
 	HTTPClient *http.Client
 }
 
+// String returns a credential-safe representation of Options.
+func (Options) String() string {
+	return "opencodeauth.Options{APIKey:<redacted>, SessionID:<redacted>}"
+}
+
+// GoString returns a credential-safe Go-syntax representation of Options.
+func (Options) GoString() string {
+	return "opencodeauth.Options{APIKey:<redacted>, SessionID:<redacted>}"
+}
+
 // Client holds immutable local configuration for OpenCode Go requests.
 // Credentials and session identifiers are intentionally private.
 type Client struct {
@@ -42,6 +52,16 @@ type Client struct {
 	userAgent    string
 	sessionID    string
 	httpTemplate http.Client
+}
+
+// String returns a credential-safe representation of Client.
+func (Client) String() string {
+	return "opencodeauth.Client{APIKey:<redacted>, SessionID:<redacted>}"
+}
+
+// GoString returns a credential-safe Go-syntax representation of Client.
+func (Client) GoString() string {
+	return "opencodeauth.Client{APIKey:<redacted>, SessionID:<redacted>}"
 }
 
 // NewClient validates options and performs no network or filesystem I/O.
