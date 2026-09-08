@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestTransportDecoratesNativeRoutesAndPreservesRequests(t *testing.T) {
@@ -331,16 +332,16 @@ func TestHTTPClientBlocksSameOriginRedirectAndIgnoresCallerPolicy(t *testing.T) 
 func TestTransportConcurrentContextsKeepKeysAndSessionsTogether(t *testing.T) {
 	arrived := make(chan struct{}, 2)
 	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseAll := func() {
+		releaseOnce.Do(func() { close(release) })
+	}
+	t.Cleanup(releaseAll)
 	underlying := &concurrentRecordingTransport{arrived: arrived, release: release}
 	client, err := NewClient(Options{APIKey: "shared-key", BaseURL: "https://example.com", UserAgent: "agent/1", HTTPClient: &http.Client{Transport: underlying}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() {
-		<-arrived
-		<-arrived
-		close(release)
-	}()
 
 	type result struct{ err error }
 	results := make(chan result, 2)
@@ -368,9 +369,24 @@ func TestTransportConcurrentContextsKeepKeysAndSessionsTogether(t *testing.T) {
 		}
 		results <- result{err: err}
 	}()
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
 	for range 2 {
-		if got := <-results; got.err != nil {
-			t.Fatal(got.err)
+		select {
+		case <-arrived:
+		case <-deadline.C:
+			t.Fatal("timed out waiting for concurrent requests to reach the transport")
+		}
+	}
+	releaseAll()
+	for range 2 {
+		select {
+		case got := <-results:
+			if got.err != nil {
+				t.Fatal(got.err)
+			}
+		case <-deadline.C:
+			t.Fatal("timed out waiting for concurrent request completion")
 		}
 	}
 
